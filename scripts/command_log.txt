@@ -8,6 +8,7 @@ rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/ukb_*_set.csv" ../d
 
 # Genome-wide single-variant analyses
 bm_arr=("hscrp_log" "hba1c" "ldl_statinadj" "tg_log" "alt_log" "ggt_log" "hdl" "alb" "lipA_log" "vitD" "apoA"  "apoB_statinadj"  "ast_log"  "chol_statinadj"  "creatinine"  "cysC_log"  "bilirubin_dir_log" "glu"  "shbg"  "bilirubin_tot_log")
+bm_arr=("alt_log" "ast_log" "ggt_log")
 
 for bm in ${bm_arr[@]}; do qsub -t 1-22 gwas/run_gwas.sh $bm; done
 
@@ -17,11 +18,14 @@ for bm in ${bm_arr[@]}; do qsub gwas/postprocess_gwas.sh ${bm}; done
 
 for bm in ${bm_arr[@]}; do qsub pgs/run_prset.sh ${bm}; done
 
-# Optimize pPGS
+rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/pgs/*_prset.*" ../data/processed/pgs/
 
-qsub pgs/run_optimize_ppgs.sh
+## Optimize pPGS
+#
+#qsub pgs/run_optimize_ppgs.sh
 
-rsync -avP uger:florez_ukb_projects/ppgs-gxe/data/processed/pgs/ppgs_vec_df.rds ../data/processed/pgs/
+#rsync -avP uger:florez_ukb_projects/ppgs-gxe/data/processed/pgs/ppgs_vec_df.rds ../data/processed/pgs/
+
 
 #rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/pgs/*.all_score" ../data/processed/pgs/
 #rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/pgs/*.snp" ../data/processed/pgs/

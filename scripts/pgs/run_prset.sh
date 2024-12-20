@@ -2,7 +2,7 @@
 
 
 #$ -l os=RedHat7
-#$ -l h_vmem=10G
+#$ -l h_vmem=2G
 #$ -l h_rt=6:00:00
 
 
@@ -42,7 +42,7 @@ Rscript ${prsice_dir}/PRSice.R --dir ${pgs_dir} \
         --beta \
         \
         --ld ${ld_ref_prefix} \
-        --bar-levels 5e-3,5e-8 \
+        --bar-levels 1e-3,5e-8 \
         --fastscore \
         --no-full \
         \
@@ -54,7 +54,7 @@ Rscript ${prsice_dir}/PRSice.R --dir ${pgs_dir} \
         \
 	--gtf ${prsice_datadir}/Homo_sapiens.GRCh37.75.gtf.gz \
 	--msigdb ${prsice_datadir}/h.all.v2023.2.Hs.symbols.gmt \
-	--set-perm 1 \
+	--set-perm 0 \
 	--wind-3 1K \
 	--wind-5 2K \
 	\

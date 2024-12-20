@@ -315,37 +315,27 @@ processed_phenos_panUKBB %>%
 
 set.seed(123)
 
+training_frac <- 0.7
+
 processed_phenos_unrelated <- read_csv("../data/processed/ukb_phenos_unrelated.csv") 
 
 training_ids <- sample(processed_phenos_unrelated$id, 
-                       round(0.5 * nrow(processed_phenos_unrelated)), 
+                       round(training_frac * nrow(processed_phenos_unrelated)), 
                        replace = FALSE)
+
 processed_phenos_unrelated %>%
   filter(id %in% training_ids) %>%
   write_csv("../data/processed/ukb_training_set.csv")
-
-validation_ids <- sample(setdiff(processed_phenos_unrelated$id, training_ids), 
-                         round(0.25 * nrow(processed_phenos_unrelated)), 
-                         replace = FALSE)
 processed_phenos_unrelated %>%
-  filter(id %in% validation_ids) %>%
-  write_csv("../data/processed/ukb_validation_set.csv")
-
-processed_phenos_unrelated %>%
-  filter(!(id %in% c(training_ids, validation_ids))) %>%
+  filter(!(id %in% training_ids)) %>%
   write_csv("../data/processed/ukb_testing_set.csv")
 
-
 processed_phenos_EUR_unrelated <- read_csv("../data/processed/ukb_phenos_EUR_unrelated.csv") 
+# Use same train/val/test IDs as multi-ancestry, but pulling from a EUR-only dataset
 
 processed_phenos_EUR_unrelated %>%
   filter(id %in% training_ids) %>%
   write_csv("../data/processed/ukb_EUR_training_set.csv")
-
 processed_phenos_EUR_unrelated %>%
-  filter(id %in% validation_ids) %>%
-  write_csv("../data/processed/ukb_EUR_validation_set.csv")
-
-processed_phenos_EUR_unrelated %>%
-  filter(!(id %in% c(training_ids, validation_ids))) %>%
+  filter(!(id %in% training_ids)) %>%
   write_csv("../data/processed/ukb_EUR_testing_set.csv")
