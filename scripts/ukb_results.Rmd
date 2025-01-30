@@ -24,6 +24,29 @@ ukb_subsets <- map(set_names(ukb_subset_names), function(set) {
 ancestry_df <- read_csv("../data/processed/ukb_phenos_panUKBB.csv", 
                         col_select = c(id, ancestry), show_col_types = FALSE)
 ancestries <- unique(ancestry_df$ancestry[!is.na(ancestry_df$ancestry)])
+
+hallmark_annot_lines <- readLines("../data/processed/prsice/h.all.v2023.2.Hs.symbols.gmt")
+hallmark_annot_df <- lapply(gene_pathway_annot_lines, function(line) {
+  line_split <- strsplit(line, "\t")[[1]]
+  pathway <- line_split[1]
+  genes <- line_split[-(1:2)]
+  tibble(pathway = pathway, gene = genes)
+}) %>%
+  bind_rows()
+
+kegg_annot_lines <- readLines("../data/processed/prsice/c2.cp.kegg_medicus.v2024.1.Hs.symbols.gmt")
+kegg_annot_df <- lapply(kegg_annot_lines, function(line) {
+  line_split <- strsplit(line, "\t")[[1]]
+  pathway <- line_split[1]
+  genes <- line_split[-(1:2)]
+  tibble(pathway = pathway, gene = genes)
+}) %>%
+  bind_rows()
+
+gene_pathway_annot_df <- bind_rows(list(
+  hallmark = hallmark_annot_df, 
+  kegg = kegg_annot_df
+), .id = "pathway_group")
 ```
 
 # Concept summary: pPGS for GxE
@@ -39,6 +62,9 @@ exposures_clean <- c("BMI")
 outcomes <- c("alt_log", "ast_log", "ggt_log")
 outcomes_clean <- c("log(ALT)", "log(AST)", "log(GGT)")
 
+pathway_groups <- c("hallmark", "kegg")
+pathway_groups_clean <- c("Hallmark", "KEGG")
+
 thresholds <- c("5e-08", "0.001")
 threshold_names <- paste0("Pt_", c("5e-08", "0.001"))
 threshold_names_clean <- c("P<5e-8", "P<0.001")
@@ -46,8 +72,8 @@ threshold_names_clean <- c("P<5e-8", "P<0.001")
 ppgs_config_df <- expand_grid(
   e = exposures,
   y = outcomes,
-  threshold = thresholds,
-  set = names(ukb_subsets)
+  pathway_group = pathway_groups,
+  threshold = thresholds
 )
 ```
 
@@ -67,7 +93,7 @@ Variables being manipulated:
 
 Plots reflect the testing set.
 
-```{r histograms, out.width="40%"}
+```{r histograms}
 plot_histogram <- function(f) {
   ukb_subsets$testing %>%
     select(x = {{ f }}) %>%
@@ -96,9 +122,9 @@ primary_covars <- c("sex", "age", "age_squared", "ageBySex", gPCs)
 liver_bms <- c("alt_log", "ast_log", "ggt_log")
 ```
 
-```{r ppgs-results, fig.asp=1.2}
-read_pgs_prset <- function(tag, thresh) {
-  ppgs_df <- read_delim(paste0("../data/processed/pgs/", tag, "_prset.all_score"),
+```{r ppgs-results, fig.asp=1.2, eval=F}
+read_pgs_prset <- function(tag, pg) {
+  ppgs_df <- read_delim(paste0("../data/processed/pgs/", tag, "_prset_", pg, ".all_score"),
                        delim = " ", show_col_types = FALSE) %>%
     select(id = IID, everything(), -FID)
     # rename_with(~ str_replace_all(., "_[\\d\\.]+$", ""), -id)
@@ -120,38 +146,9 @@ test_single_ppgs_gxe <- function(e, y, regression_df, covars, standardize) {
     filter(term == paste0("ppgs:", e))
 }
 
-# get_ppgs_weights <- function(e, y, tag, thresh, set, covars) {
-#   pgs_df <- read_pgs_prset(tag, thresh)
-#   if (!(thresh == "all")) {
-#     pgs_df <- select(pgs_df, id, contains(thresh))
-#   }
-#   pathways <- setdiff(names(pgs_df), "id")
-#   regression_df <- inner_join(ukb_subsets[[set]], pgs_df, by = "id")
-#   lm_form_str <- paste0(y, " ~ pgs * ", e)
-#   if (!is.null(covars)) {
-#     lm_form_str <- paste0(lm_form_str, " + ", paste(covars, collapse = " + "))
-#   }
-#   univariate_ppgs_gxe_df <- parallel::mclapply(
-#     setNames(pathways, pathways), 
-#     function(p) {
-#       regression_df$pgs <- regression_df[[p]]
-#       lm_fit <- lm(as.formula(lm_form_str), data = regression_df)
-#       lm_fit %>%
-#         broom::tidy() %>%
-#         filter(term == paste0("pgs:", e))
-#     }, 
-#     mc.cores = 16) %>%
-#     bind_rows(.id = "pathway")
-#   univariate_ppgs_gxe_df
-# }
-
-
-# ppgs_calc_df <- readRDS("../data/processed/pgs/ppgs_vec_df.rds")
-
-
-test_all_ppgs_gxe <- function(e, y, threshold, set, covars, 
+test_all_ppgs_gxe <- function(e, y, pg, threshold, set, covars, 
                           ancestry_test = "all", standardize = TRUE) {
-  ppgs_df <- read_pgs_prset(y) %>%
+  ppgs_df <- read_pgs_prset(y, pg) %>%
     select(id, contains(threshold))
   pathways <- gsub(paste0("_", threshold), "", setdiff(names(ppgs_df), "id"))
   regression_df <- inner_join(ukb_subsets[[set]], ppgs_df, by = "id")
@@ -159,49 +156,85 @@ test_all_ppgs_gxe <- function(e, y, threshold, set, covars,
     regression_df <- inner_join(regression_df, ancestry_df, by = "id") %>%
       filter(ancestry == ancestry_test)
   }
-  map(pathways[1:3], function(p) {
-    print(paste0(p, "_", threshold))
+  map(pathways[1:4], function(p) {
     regression_df$ppgs <- regression_df[[paste0(p, "_", threshold)]]
     test_single_ppgs_gxe(e, y, regression_df, covars, standardize)
   }) %>%
-    setNames(pathways[1:3]) %>%
+    setNames(pathways[1:4]) %>%
     bind_rows(.id = "pathway")
 }
 # test_all_ppgs_gxe("bmi", "alt_log", "0.001", "testing",
 #                   c(primary_covars, paste0("bmiBy", gPCs)))
 
-ppgs_res_df <- pgs_config_df %>%
-  select(e, y, tag, threshold) %>%
-  distinct() %>%
+ppgs_res_df <- ppgs_config_df %>%
+  select(e, y, pathway_group, threshold) %>%
   rowwise() %>%
   mutate(pathway_fits = list(
-    get_ppgs_weights(e, y, paste0(y, "_prset"), threshold, "validation",
-                     c(primary_covars, paste0(e, "By", gPCs)))
-  ))
+    test_all_ppgs_gxe(e, y, pathway_group, threshold, "testing",
+                      c(primary_covars, paste0(e, "By", gPCs)))
+  )) %>%
+  unnest(pathway_fits)
 ```
 
-```{r, show-weights, fig.asp=1}
-ppgs_calc_df %>%
-  filter(y %in% liver_bms) %>%
-  unnest(pathway_fits) %>%
-  mutate(l95 = estimate - 1.96 * std.error,
+```{r load-ppgs-results}
+ppgs_res_df_full <- readRDS("../data/processed/pgs/ppgs_res_df.rds") %>%
+  mutate(pathway = gsub("HALLMARK_|KEGG_MEDICUS_", "", pathway))
+
+ppgs_res_df <- ppgs_res_df_full %>%
+  filter(term == "ppgs:bmi")
+
+n_hallmark <- length(unique(ppgs_res_df_full$pathway[ppgs_res_df_full$pathway_group == "hallmark"]))
+bonferroni_hallmark <- 0.05 / n_hallmark
+n_kegg <- length(unique(ppgs_res_df_full$pathway[ppgs_res_df_full$pathway_group == "kegg"]))
+bonferroni_kegg <- 0.05 / n_kegg
+```
+
+```{r plot-ppgs-results, fig.asp=1}
+ppgs_res_df %>%
+  filter(pathway_group == "hallmark",
+         p.value < 0.05) %>%
+  mutate(nlp = -log10(p.value),
+         l95 = estimate - 1.96 * std.error,
          u95 = estimate + 1.96 * std.error) %>%
   arrange(estimate) %>%
   mutate(pathway = factor(pathway, levels = pathway, 
                           labels = str_replace(pathway, "HALLMARK_", ""))) %>%
-  ggplot(aes(x = pathway, y = estimate)) +
+  ggplot(aes(x = pathway, y = nlp, fill = threshold)) +
   geom_hline(yintercept = 0, color = "gray") +
-  geom_point() +
-  geom_errorbar(aes(ymin = l95, ymax = u95)) +
+  geom_hline(yintercept = -log10(bonferroni_hallmark), 
+             linetype = "dashed", color = "gray") +
+  geom_bar(stat = "identity", width = 0.5, position = position_dodge(width = 0.5)) + 
+  # geom_point(position = position_dodge(width = 0.5)) +
+  # geom_errorbar(aes(ymin = l95, ymax = u95), width = 0, 
+  #               position = position_dodge(width = 0.5)) +
   facet_wrap(vars(y), ncol = 1, scale = "free_y") +
-  labs(x = "", y = "pPGSxE effect size (95% CI)",
-       title = "Pathway-specific PGS interaction results") +
+  labs(x = "", y = "Standardized pPGSxE effect size (95% CI)",
+       title = "Nominal pPGS interaction results: hallmark gene sets") +
   theme(axis.text.x = element_text(angle = 45, hjust = 0.9, size = 4))
 
-ppgs_calc_df %>%
-  filter(y %in% liver_bms,
-         threshold != "all") %>%
-  unnest(pathway_fits) %>%
+ppgs_res_df %>%
+  filter(pathway_group == "kegg",
+         p.value < 0.001) %>%
+  mutate(nlp = -log10(p.value),
+         l95 = estimate - 1.96 * std.error,
+         u95 = estimate + 1.96 * std.error) %>%
+  arrange(estimate) %>%
+  mutate(pathway = factor(pathway, levels = pathway, 
+                          labels = str_replace(pathway, "HALLMARK_", ""))) %>%
+  ggplot(aes(x = pathway, y = nlp, fill = threshold)) +
+  geom_hline(yintercept = 0, color = "gray") +
+  geom_hline(yintercept = -log10(bonferroni_kegg), 
+             linetype = "dashed", color = "gray") +
+  geom_bar(stat = "identity", width = 0.5, position = position_dodge(width = 0.5)) + 
+  # geom_point(position = position_dodge(width = 0.5)) +
+  # geom_errorbar(aes(ymin = l95, ymax = u95), width = 0, 
+  #               position = position_dodge(width = 0.5)) +
+  facet_wrap(vars(y), ncol = 1, scales = "free_y") +
+  labs(x = "", y = "Standardized pPGSxE effect size (95% CI)",
+       title = "Nominal pPGS interaction results: KEGG pathways") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.9, size = 4))
+
+ppgs_res_df %>%
   arrange(p.value) %>%
   mutate(p.value = signif(p.value, 3)) %>%
   select(biomarker = y, pathway, pgs_p_threshold = threshold, estimate, std.error, p.value) %>%
@@ -210,162 +243,292 @@ ppgs_calc_df %>%
   #        `pPGSxBMI estimate` = estimate, SE = std.error, P = p.value)
 ```
 
+## Comparison to variant-specific GWIS
+
+```{r load-gwis}
+gwis_res_nom_list <- lapply(set_names(outcomes), function(y) {
+  read_tsv(paste0("../data/processed/gwas/bmi_", y, "_merged_clean_nom"),
+             show_col_types = FALSE)
+})
+
+bonferroni <- 5e-8
+```
+
+```{r gwis-manhattan, fig.width=8}
+mh_data <- bind_rows(gwis_res_nom_list, .id = "y")  %>%
+  mutate(P = P_int) %>%
+  filter(!is.na(P)) %>%
+  mutate(nlp = -log10(P))
+
+# Trim points in crowded regions (credit to RaMWAS package for code snippet)
+yfac <- as.integer(mh_data$nlp * 100) + 1L
+yorder <- sort.list(yfac)
+yfac <- factor(yfac, levels = as.character(seq_len(max(yfac))))
+ygroup <- split(seq_along(yfac), yfac)
+for (i in seq_along(ygroup)) {
+  if (length(ygroup[[i]]) > 300) {
+    ygroup[[i]] <- sample(ygroup[[i]], size = 300, replace = FALSE)
+  }
+}
+keep <- unlist(ygroup, use.names=FALSE)
+
+mh_data <- mh_data %>%
+  select(SNP, CHR, POS, nlp, y) %>%
+  dplyr::slice(keep) %>%
+  mutate(POS = as.numeric(as.character(POS)),
+         CHR = factor(CHR, levels = 1:22)) %>%
+  arrange(CHR, POS) %>%
+  mutate(pos_idx = seq(1, nrow(.)))
+
+chr_lengths <- sapply(1:22, function(chr) with(mh_data, max(POS[CHR == chr])))
+chr_start_pos <- cumsum(chr_lengths) - chr_lengths
+
+mh_data <- mh_data %>%
+  mutate(x_coord = chr_start_pos[CHR] + POS,
+         color = ifelse(nlp > -log10(bonferroni), y, CHR),
+  ) %>%
+  arrange(as.integer(color), nlp)
+
+lims <- mh_data %>%
+  group_by(CHR) %>%
+  summarise(avg_coord = (min(x_coord) + max(x_coord)) / 2)
+
+mh_cols <- setNames(
+  rep(x=c("#999999", "#555555"), length.out = 22),  # Gray/dark gray for alternating chromosomes
+  levels(factor(lims$CHR))
+)
+
+mh_cols <- c(
+  setNames(rep(c("#999999", "#555555"), length.out = 22), levels(factor(lims$CHR))),  # Gray/dark gray for chromosomes
+  setNames(RColorBrewer::brewer.pal(3, "Set1"), unique(mh_data$y))   # Unique colors for `y`
+)
+
+gwis_mh_plt <- ggplot() +
+  geom_point(data = mh_data,
+             aes(x = x_coord, y = nlp, color = factor(color)), 
+             size = 0.6, alpha = 1) +
+  geom_hline(yintercept = -log10(bonferroni), linetype = "dashed", color = "black") + 
+  scale_x_continuous(breaks=lims$avg_coord[c(1:16, 18, 20, 20, 22)], 
+                     labels=c(1:16, 18, 20, 20, 22)) +
+  scale_y_continuous(name=expression(-log[10](italic(p))*" interaction")) +
+  scale_colour_manual(values = mh_cols, breaks = unique(mh_data$y),
+                      name = "Biomarker") +
+  theme_minimal() +
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_text(vjust = -1.5),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank())
+
+gwis_mh_plt
+```
+
+```{r pruning}
+prune_chromosome <- function(chr_df, pval_col, locus_width) {
+  # Prune variants given a chromosome-specific summary statistic data frame
+  df <- arrange(chr_df, !!sym(pval_col))  # Sort by ascending p-value
+  pruned_df <- tibble()
+  while(nrow(df) > 0) {
+    pruned_df <- bind_rows(pruned_df, df[1, ])  # Add lowest p-value to pruned dataset
+    df <- filter(df, (POS < df$POS[1] - locus_width / 2) |  # Remove rest of variants in that distance-based locus
+                   (POS > df$POS[1] + locus_width / 2))
+  }
+  pruned_df
+}
+
+prune_variants <- function(ss_df, pval_col, thresh = 5e-8, locus_width = 1e6) {
+  # Prune variants across all chromosomes using a simple distance-based approach
+  if (min(ss_df[[pval_col]], na.rm = TRUE) > thresh) return(tibble())
+  ss_df %>%
+    filter(!!sym(pval_col) < thresh) %>%
+    mutate(POS = as.numeric(POS)) %>%
+    nest(data = -CHR) %>%
+    mutate(pruned_ss = map(data, prune_chromosome, pval_col, locus_width)) %>%
+    unnest(pruned_ss) %>%
+    select(-data) %>%
+    dplyr::rename(index_var = SNP)
+}
+
+pruned_gwis_ss <- lapply(gwis_res_nom_list, prune_variants, "robust_P_int")
+
+manual_snp_to_gene_map_df <- tribble(
+  ~rsid, ~gene, ~join_gene,
+  "rs2642438", "MTARC1", "MTARC2",
+  "rs17036160", "PPARG", "PPARG",
+  "rs11735092", "HSD17B13", "HSD17B11",
+  "rs2954021", "TRIB1", "TRIB1",
+  "rs200210321", "SUGP1/TM6SF2", "TM7SF2",
+  "rs10414043", "APOC1", "APOC1",
+  "rs738408", "PNPLA3", "PNPLA3"
+)
+
+locus_to_pathway_df <- pruned_gwis_ss$alt_log %>%
+  select(index_var, CHR, POS, P_int) %>%
+  left_join(manual_snp_to_gene_map_df, by = c("index_var" = "rsid")) %>%
+  left_join(gene_pathway_annot_df, by = c("join_gene" = "gene"))
+
+locus_to_pathway_df %>%
+  write_csv("../output/alt_locus_to_pathway.csv")
+
+locus_to_pathway_df %>%
+  select(index_var, CHR, gene, join_gene, pathway)
+```
+
+
 # Specific visualizations
 
-```{r example-viz, eval=F}
-e <- "bmi"
-y <- "hscrp_log"
-tag <- "bmi_hscrp_log"
-thresh_name <- "Pt_5e-08"
-e_clean <- "BMI"
-y_clean <- "log(hsCRP)"
-# ppgs_df <- filter(ppgs_df, e == e)
-regression_df <- inner_join(ukb_subsets$testing, ppgs_df, by = "id") %>%
-  filter(!is.na(.data[[e]]), !is.na(.data[[y]])) %>%
-  mutate(pgs_bin = cut(pgs, quantile(pgs, seq(0, 1, length.out = 11)), 
-                       include.lowest = TRUE, labels = paste0("Q", 1:10)))
-```
+```{r alt-fig-base}
+base_sumstats <- ppgs_res_df_full %>%
+  filter(pathway_group == "hallmark", 
+         y == "alt_log",
+         pathway == "Base",
+         threshold == 0.001)
+base_ppgs_beta_main <- base_sumstats$estimate[base_sumstats$term == "ppgs"]
+base_ppgs_beta_int <- base_sumstats$estimate[base_sumstats$term == "ppgs:bmi"]
 
-```{r, eval = FALSE}
-regression_df %>%
-  ggplot(aes(x = bmi, y = hscrp_log)) +
-  geom_smooth(method = "gam", formula = y ~ rms::rcs(x, 5)) +
-  labs(x = e_clean,
-       y = y_clean)
-```
-
-```{r, eval = FALSE}
-for (tag in c("hscrp_log", "bmi_hscrp_log", "hscrp_log_vQTL", "hscrp_log_prset")) {
-  df <- read_table(paste0("../data/processed/pgs/", tag, ".all_score"), 
-                 show_col_types = FALSE)
-  print(head(df))
-}
-```
-
-```{r, eval = FALSE}
-pgs_test_main_res_df %>%
-  left_join(optimal_pgs_main_df, by = c("y", "pgs_type", "thresh_name")) %>%
-  filter(y == "hscrp_log") %>%
-  mutate(color = if_else(set == "validation", optimal, NA),
-         statistic = if_else(set == "testing" & optimal == FALSE, NA, statistic),
-         y = factor(y, levels = outcomes, labels = paste0(outcomes_clean, " set")),
-         set = factor(set, levels = ukb_subset_names, 
-                      labels = ukb_subset_names_clean),
-         thresh_name = factor(thresh_name, 
-                              levels = threshold_names,
-                              labels = threshold_names_clean)) %>%
-  ggplot(aes(x = thresh_name, y = statistic, color = color)) +
-  geom_bar(stat = "identity") +
-  scale_color_discrete(name = "Optimal", na.translate = FALSE) +
-  facet_wrap(vars(set), nrow = 1, scale = "free_y") +
-  labs(x = "", y = "PGS main effect z-statistic",
-       title = "Positive control: standard GWAS/main effects pipeline") +
-  theme(axis.text.x = element_text(angle = 25, hjust = 0.9))
-```
-
-```{r, fig.width=5, eval = FALSE}
-all_pgs_test_res_df %>%
-  filter(set == "testing",
-         e == "bmi",
-         y == "hscrp_log") %>%
-  mutate(e = factor(e, levels = exposures, labels = exposures_clean),
-         y = factor(y, levels = outcomes, labels = outcomes_clean),
-         pgs_type = factor(pgs_type, levels = pgs_types, labels = pgs_types_clean),
-         set = factor(set, levels = names(ukb_subsets), 
-                      labels = paste0(str_to_title(names(ukb_subsets)), " set")),
-         thresh_name = factor(thresh_name, 
-                              levels = threshold_names,
-                              labels = threshold_names_clean)) %>%
-  ggplot(aes(x = pgs_type, y = statistic, fill = pgs_type)) +
-  geom_bar(stat = "identity") +
-  geom_hline(yintercept = 0, color = "gray") +
-  scale_fill_discrete(name = "PGS type") +
-  labs(x = "", y = "Interaction test z-statistic",
-       title = "PGSxE testing (testing set)") +
-  theme(axis.text.x = element_text(angle = 20, hjust = 0.9))
-```
-
-```{r, eval = FALSE}
-quantile_lines_plt <- regression_df %>%
-  ggplot(aes(x = bmi, y = hscrp_log, group = pgs_bin, color = pgs_bin)) +
-  # ggplot(aes(x = {{e}}, y = {{y}}, group = pgs_bin, color = pgs_bin)) +
-  geom_point(alpha = 0.2) +
-  geom_smooth(method = "lm", formula = "y ~ x") +
-  scale_color_discrete(name = "PGS bin") +
-  coord_cartesian(xlim = quantile(regression_df[[e]], c(0.001, 0.999))) +
-  labs(x = e_clean,
-       y = y_clean)
-
-test_ey <- function(df, e, y, covars) {
-  lm_form_str <- paste0(y, " ~ ", e, " + ", paste(covars, collapse = " + "))
-  lm_fit <- lm(as.formula(lm_form_str), data = df)
-  lm_fit %>%
-    broom::tidy() %>%
-    filter(term == e)
-}
-
-quantile_effects_df <- regression_df %>%
-  nest(data = -pgs_bin) %>%
-  rowwise() %>%
-  mutate(ey_lm = test_ey(data, e, y, primary_covars)) %>%
-  select(-data) %>%
-  unnest(ey_lm)
-quantile_effects_plt <- quantile_effects_df %>%
-  select(pgs_bin, estimate) %>%
-  ggplot(aes(x = pgs_bin, y = estimate)) +
+base_pgs_plt <- tibble(bmi_grp = -1:1,
+       total_ppgs_beta = base_ppgs_beta_main + bmi_grp * base_ppgs_beta_int) %>%
+  mutate(bmi_grp = factor(bmi_grp, labels = c("-1 SD", "Mean", "+1 SD"))) %>%
+  ggplot(aes(x = bmi_grp, y = total_ppgs_beta, group = 1)) +
   geom_point() +
-  labs(x = "PGS bin",
-       y = paste0(e_clean, " - ", y_clean, " effect size"))
-
-quantile_lines_plt + quantile_effects_plt
-
-quantile_effects_df %>%
-  arrange(pgs_bin) %>%
-  select(pgs_bin, estimate) %>%
-  mutate(factor_change = estimate / estimate[1])
-
-# q1_corr <- cor.test(~ hscrp_log + whr, data = filter(regression_df, pgs_bin == "Q1"))$estimate
-# q10_corr <- cor.test(~ hscrp_log + whr, data = filter(regression_df, pgs_bin == "Q10"))$estimate
-# 
-# print(paste0("WHR-log(hsCRP) correlation in lowest vs. highest decile: ",
-#              round(q1_corr, 2), " versus ", round(q10_corr, 2)))
-```
-
-```{r, fig.asp=1.4, eval = FALSE}
-all_pgs_test_res_df %>%
-  filter(set == "testing",
-         e == "bmi") %>%
-  mutate(e = factor(e, levels = exposures, labels = exposures_clean),
-         y = factor(y, levels = outcomes, labels = outcomes_clean),
-         pgs_type = factor(pgs_type, levels = pgs_types, labels = pgs_types_clean),
-         set = factor(set, levels = names(ukb_subsets), 
-                      labels = paste0(str_to_title(names(ukb_subsets)), " set")),
-         thresh_name = factor(thresh_name, 
-                              levels = threshold_names,
-                              labels = threshold_names_clean)) %>%
-  ggplot(aes(x = pgs_type, y = statistic, fill = pgs_type)) +
-  geom_bar(stat = "identity") +
+  geom_line() +
   geom_hline(yintercept = 0, color = "gray") +
-  scale_fill_discrete(name = "PGS type") +
-  facet_wrap(vars(y), ncol = 1, scale = "free_y") +
-  labs(x = "", y = "Interaction test z-statistic",
-       title = "iPGSxBMI results (testing set)") +
-  theme(axis.text.x = element_text(angle = 20, hjust = 0.9))
+  coord_cartesian(ylim = c(0, NA)) +
+  labs(x = "BMI group", y = "Full PGS effect on log(ALT)")
+
+# base_pgs_plt <- ppgs_res_df %>%
+#   filter(pathway_group == "hallmark", 
+#          pathway == "Base",
+#          threshold == 0.001) %>%
+#   mutate(nlp = -log10(p.value)) %>%
+#   # mutate(p_label = paste0("P = ", signif(p.value, 3))) %>%
+#   ggplot(aes(x = y, y = nlp)) +
+#   geom_bar(stat = "identity") +
+#   # geom_label(aes(label = p_label), vjust = 4.5) +
+#   labs(x = "Biomarker",
+#        y = expression(-log[10](italic(p))*" full PGSxBMI"))
 ```
 
-```{r, eval = FALSE}
-ppgs_weights_df %>%
-  filter(e == "bmi",
-         y == "hscrp_log") %>%
-  unnest(pathway_fits) %>%
+```{r alt-fig-pathway}
+alt_ppgs_plt <- ppgs_res_df %>%
+  filter(pathway_group == "hallmark", 
+         y == "alt_log",
+         threshold == 0.001,
+         pathway != "Base") %>%
   arrange(estimate) %>%
-  mutate(pathway = factor(pathway, levels = pathway, 
-                          labels = str_replace(pathway, "HALLMARK_", ""))) %>%
-  ggplot(aes(x = pathway, y = estimate)) +
+  mutate(pathway = factor(pathway, levels = unique(pathway)),
+         nlp = -log10(p.value)) %>%
+  ggplot(aes(x = pathway, y = nlp)) +
+  # geom_hline(yintercept = 0, color = "gray") +
+  # geom_point(position = position_dodge(width = 0.5)) +
+  # geom_errorbar(aes(ymin = l95, ymax = u95), width = 0, 
+  #               position = position_dodge(width = 0.5)) +
   geom_bar(stat = "identity") +
-  labs(x = "", y = "pPGSxBMI univariate effect size",
-       title = "Example pPGS optimization (validation set)") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 0.9))
+  geom_hline(yintercept = -log10(bonferroni_hallmark), 
+             linetype = "dashed", color = "gray") +
+  labs(x = "", y = "Std. pPGSxBMI effect (95% CI)") +
+  labs(x = "", y = expression(-log[10](italic(p))*" pPGSxBMI")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.9, size = 4)) +
+  annotate("label", label = "Hallmark pathways", 
+           x = 8, y = 25, size = 3)
+           # x = -Inf, y = Inf, hjust = 1, yjust = 1, size = 3)
+
+alt_ppgs_plt <- ppgs_res_df %>%
+  filter(y == "alt_log",
+         threshold == 0.001,
+         pathway != "Base",
+         p.value < 0.01) %>%
+  arrange(estimate) %>%
+  mutate(pathway = factor(pathway, levels = unique(pathway)),
+         nlp = -log10(p.value)) %>%
+  ggplot(aes(x = pathway, y = nlp, color = pathway_group)) +
+  # geom_hline(yintercept = 0, color = "gray") +
+  # geom_point(position = position_dodge(width = 0.5)) +
+  # geom_errorbar(aes(ymin = l95, ymax = u95), width = 0, 
+  #               position = position_dodge(width = 0.5)) +
+  geom_bar(stat = "identity") +
+  geom_hline(yintercept = -log10(bonferroni_kegg), 
+             linetype = "dashed", color = "gray") +
+  labs(x = "", y = "Std. pPGSxBMI effect (95% CI)") +
+  labs(x = "", y = expression(-log[10](italic(p))*" pPGSxBMI")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.9, size = 4)) +
+  annotate("label", label = "Hallmark pathways", 
+           x = 8, y = 25, size = 3)
+
+alt_ppgs_plt
 ```
 
+```{r alt-fig-gwis}
+mh_data <- gwis_res_nom_list$alt_log %>%
+  mutate(y = "alt_log",
+         P = P_int) %>%
+  filter(!is.na(P)) %>%
+  mutate(nlp = -log10(P))
 
+# Trim points in crowded regions (credit to RaMWAS package for code snippet)
+yfac <- as.integer(mh_data$nlp * 100) + 1L
+yorder <- sort.list(yfac)
+yfac <- factor(yfac, levels = as.character(seq_len(max(yfac))))
+ygroup <- split(seq_along(yfac), yfac)
+for (i in seq_along(ygroup)) {
+  if (length(ygroup[[i]]) > 300) {
+    ygroup[[i]] <- sample(ygroup[[i]], size = 300, replace = FALSE)
+  }
+}
+keep <- unlist(ygroup, use.names=FALSE)
+
+mh_data <- mh_data %>%
+  select(SNP, CHR, POS, nlp, y) %>%
+  dplyr::slice(keep) %>%
+  mutate(POS = as.numeric(as.character(POS)),
+         CHR = factor(CHR, levels = 1:22)) %>%
+  arrange(CHR, POS) %>%
+  mutate(pos_idx = seq(1, nrow(.)))
+
+chr_lengths <- sapply(1:22, function(chr) with(mh_data, max(POS[CHR == chr])))
+chr_start_pos <- cumsum(chr_lengths) - chr_lengths
+
+mh_data <- mh_data %>%
+  mutate(x_coord = chr_start_pos[CHR] + POS,
+         color = ifelse(nlp > -log10(bonferroni), y, CHR),
+  ) %>%
+  arrange(as.integer(color), nlp)
+
+lims <- mh_data %>%
+  group_by(CHR) %>%
+  summarise(avg_coord = (min(x_coord) + max(x_coord)) / 2)
+
+mh_cols <- setNames(
+  rep(x=c("#999999", "#555555"), length.out = 22),  # Gray/dark gray for alternating chromosomes
+  levels(factor(lims$CHR))
+)
+
+mh_cols <- c(
+  setNames(rep(c("#999999", "#555555"), length.out = 22), levels(factor(lims$CHR))),  # Gray/dark gray for chromosomes
+  setNames(RColorBrewer::brewer.pal(3, "Set1"), unique(mh_data$y))   # Unique colors for `y`
+)
+
+alt_gwis_mh_plt <- ggplot() +
+  geom_point(data = mh_data,
+             aes(x = x_coord, y = nlp, color = factor(color)), 
+             size = 0.6, alpha = 1) +
+  geom_hline(yintercept = -log10(bonferroni), linetype = "dashed", color = "black") + 
+  scale_x_continuous(breaks = lims$avg_coord[c(1:16, 18, 20, 20, 22)], 
+                     labels = c(1:16, 18, 20, 20, 22)) +
+  scale_y_continuous(name = expression(-log[10](italic(p))*" GxBMI")) +
+  scale_colour_manual(values = mh_cols, breaks = unique(mh_data$y),
+                      name = "Biomarker") +
+  guides(color = "none") +
+  theme_minimal() +
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_text(vjust = -1.5),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank())
+```
+
+```{r alt-fig-full, fig.asp=1.2}
+base_pgs_plt /
+  alt_ppgs_plt /
+  alt_gwis_mh_plt +
+  plot_annotation(title = "Comparison of pPGSxE and GWIS results",
+                  tag_levels = "a")
+```

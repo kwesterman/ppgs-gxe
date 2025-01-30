@@ -11,14 +11,24 @@ bm_arr=("hscrp_log" "hba1c" "ldl_statinadj" "tg_log" "alt_log" "ggt_log" "hdl" "
 bm_arr=("alt_log" "ast_log" "ggt_log")
 
 for bm in ${bm_arr[@]}; do qsub -t 1-22 gwas/run_gwas.sh $bm; done
-
 for bm in ${bm_arr[@]}; do qsub gwas/postprocess_gwas.sh ${bm}; done
+
+for bm in ${bm_arr[@]}; do qsub -t 1-22 gwas/run_gwis.sh bmi $bm; done
+for bm in ${bm_arr[@]}; do qsub gwas/postprocess_gwis.sh bmi ${bm}; done
+
+rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/gwas/*merged_clean_nom" ../data/processed/gwas/
 
 # Generate and calculate pPGS
 
 for bm in ${bm_arr[@]}; do qsub pgs/run_prset.sh ${bm}; done
 
-rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/pgs/*_prset.*" ../data/processed/pgs/
+rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/pgs/*_prset*" ../data/processed/pgs/
+
+# Test pPGSxE
+
+qsub pgs/test_ppgs_by_e.sh
+
+rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/pgs/*.rds ../data/processed/pgs/
 
 ## Optimize pPGS
 #
