@@ -29,26 +29,3 @@ rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/pgs/*_prset*" ../da
 qsub pgs/run_test_ppgs_by_e.sh
 
 rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/pgs/*.rds" ../data/processed/pgs/
-
-## Optimize pPGS
-#
-#qsub pgs/run_optimize_ppgs.sh
-
-#rsync -avP uger:florez_ukb_projects/ppgs-gxe/data/processed/pgs/ppgs_vec_df.rds ../data/processed/pgs/
-
-
-#rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/pgs/*.all_score" ../data/processed/pgs/
-#rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/pgs/*.snp" ../data/processed/pgs/
-
-## Export PGS definitions (from UKB postprocessing and to All of Us platform)
-#
-#rsync -avP ../data/processed/pgs/optimized_*_params.csv uger:"florez_ukb_projects/ipgs/data/processed/pgs/"
-#
-#for bm in ${bm_arr[@]}; do pgs/export_pgs_weights.sh ${bm} mpgs; done
-#for bm in ${bm_arr[@]}; do pgs/export_pgs_weights.sh bmi_${bm} ipgs; done
-#for bm in ${bm_arr[@]}; do pgs/export_pgs_weights.sh ${bm}_vQTL vpgs; done
-#
-#rsync -avP uger:"florez_ukb_projects/ipgs/data/processed/pgs/*_pgs_weights_hg38.txt" ../data/processed/pgs/
-#gsutil cp ../data/processed/pgs/optimized_*_params.csv gs://fc-secure-d88ec83d-c5e9-4ca4-8776-7b3f142893dc/pgs_weights/
-#gsutil cp ../data/processed/pgs/*_pgs_weights_hg38.txt gs://fc-secure-d88ec83d-c5e9-4ca4-8776-7b3f142893dc/pgs_weights/
-#gsutil cp ../data/processed/manuscript/all_ukb_pgs_test_res_df.rds gs://fc-secure-d88ec83d-c5e9-4ca4-8776-7b3f142893dc/results/
