@@ -27,7 +27,6 @@ prsice_datadir=../data/processed/prsice
 source /broad/software/scripts/useuse
 use R-4.1
 
-
 Rscript ${prsice_dir}/PRSice.R --dir ${pgs_dir} \
         --prsice ${prsice_dir}/PRSice_linux \
         \
@@ -96,8 +95,46 @@ Rscript ${prsice_dir}/PRSice.R --dir ${pgs_dir} \
 	--wind-5 2K \
 	\
 	--print-snp \
-	--out ${pgs_dir}/${tag}_prset_kegg \
+	--out ${pgs_dir}/${tag}_prset_kegg_medicus \
 	\
 	--seed 123 \
         --thread 8 \
         --memory 10Gb
+
+Rscript ${prsice_dir}/PRSice.R --dir ${pgs_dir} \
+        --prsice ${prsice_dir}/PRSice_linux \
+        \
+        --base ${input_file} \
+        --snp SNP \
+        --chr CHR \
+        --bp POS \
+        --A1 EA \
+        --A2 NEA \
+        --stat beta \
+        --pvalue P \
+        --beta \
+        \
+        --ld ${ld_ref_prefix} \
+        --bar-levels 1e-3,5e-8 \
+        --fastscore \
+        --no-full \
+        \
+        --target /broad/ukbb/imputed_v3/ukb_imp_chr#_v3,/humgen/florezlab/UKBB_app27892/ukb27892_imp_chrAUT_v3_s487395.sample \
+        --type bgen \
+	--exclude ${prsice_datadir}/ukb_duplicate_snpids.txt \
+        --all-score \
+        --no-regress \
+        \
+	--gtf ${prsice_datadir}/Homo_sapiens.GRCh37.75.gtf.gz \
+	--msigdb ${prsice_datadir}/c2.cp.kegg_legacy.v2024.1.Hs.symbols.gmt \
+	--set-perm 0 \
+	--wind-3 1K \
+	--wind-5 2K \
+	\
+	--print-snp \
+	--out ${pgs_dir}/${tag}_prset_kegg_legacy \
+	\
+	--seed 123 \
+        --thread 8 \
+        --memory 10Gb
+

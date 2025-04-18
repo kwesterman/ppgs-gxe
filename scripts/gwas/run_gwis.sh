@@ -28,7 +28,7 @@ source /broad/software/scripts/useuse
 use R-4.1
 R --no-save <<EOF
 library(tidyverse)
-read_csv("../data/processed/ukb_training_set.csv") %>%
+read_csv("../data/processed/ukb_phenos_unrelated.csv") %>%
   select(where(~ !is.character(.x))) %>%
   mutate(across(contains("gPC"), ~. * ${exposure}, .names="${exposure}By{.col}")) %>%
   write_csv("../data/processed/${exposure}_${pheno}_phenos_chr${chr}.tmp")

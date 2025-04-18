@@ -26,7 +26,7 @@ source /broad/software/scripts/useuse
 use R-4.1
 R --no-save <<EOF
 library(tidyverse)
-read_csv("../data/processed/ukb_training_set.csv") %>%
+read_csv("../data/processed/ukb_phenos_unrelated.csv") %>%
   select(where(~ !is.character(.x))) %>%
   write_csv("../data/processed/${pheno}_phenos_chr${chr}.tmp")
 EOF

@@ -8,6 +8,10 @@ ukb_subsets <- map(set_names(ukb_subset_names), function(set) {
   read_csv(paste0("../data/processed/ukb_", set, "_set.csv"), show_col_types = FALSE) %>%
     mutate(across(matches("^gPC"), ~ . * bmi, .names = "bmiBy{.col}"))
 })
+ukb_phenos <- read_csv("../data/processed/ukb_phenos_unrelated.csv", show_col_types = FALSE) %>%
+  mutate(across(matches("^gPC"), ~ . * bmi, .names = "bmiBy{.col}"))
+ukb_subsets$full <- ukb_phenos
+
 
 exposures <- c("bmi")
 exposures_clean <- c("BMI")
@@ -15,8 +19,8 @@ exposures_clean <- c("BMI")
 outcomes <- c("alt_log", "ast_log", "ggt_log")
 outcomes_clean <- c("log(ALT)", "log(AST)", "log(GGT)")
 
-pathway_groups <- c("hallmark", "kegg")
-pathway_groups_clean <- c("Hallmark", "KEGG")
+pathway_groups <- c("hallmark", "kegg_medicus", "kegg_legacy")
+pathway_groups_clean <- c("Hallmark", "KEGG Medicus", "KEGG Legacy")
 
 thresholds <- c("5e-08", "0.001")
 threshold_names <- paste0("Pt_", c("5e-08", "0.001"))
@@ -79,7 +83,7 @@ ppgs_res_df <- ppgs_config_df %>%
   select(e, y, pathway_group, threshold) %>%
   rowwise() %>%
   mutate(pathway_fits = list(
-    test_all_ppgs_gxe(e, y, pathway_group, threshold, "testing",
+    test_all_ppgs_gxe(e, y, pathway_group, threshold, "full",
                       c(primary_covars, paste0(e, "By", gPCs)))
   )) %>%
   unnest(pathway_fits)

@@ -26,9 +26,9 @@ rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/pgs/*_prset*" ../da
 
 # Test pPGSxE
 
-qsub pgs/test_ppgs_by_e.sh
+qsub pgs/run_test_ppgs_by_e.sh
 
-rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/pgs/*.rds ../data/processed/pgs/
+rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/pgs/*.rds" ../data/processed/pgs/
 
 ## Optimize pPGS
 #
