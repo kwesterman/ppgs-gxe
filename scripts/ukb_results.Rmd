@@ -112,7 +112,6 @@ Variables being manipulated:
 
 Overall, `r nrow(ukb_phenos)` unrelated individuals from the UKB were used for analysis.
 
-
 ```{r histograms, fig.asp=0.4}
 plot_histogram <- function(f) {
   ukb_subsets$testing %>%
@@ -134,9 +133,32 @@ alt_hist + ast_hist + ggt_hist
 # }
 ```
 
+```{r bmi-biomarker-correlations}
+tibble(y = outcomes) %>%
+  rowwise() %>%
+  mutate(cor = list(broom::tidy(cor.test(ukb_phenos$bmi, ukb_phenos[[y]], use = "pairwise.complete.obs")))) %>%
+  unnest(cor) %>%
+  select(y, estimate, p.value) %>%
+  kable(caption = "BMI main effects on biomarkers") %>%
+  kable_styling(full_width = FALSE)
+```
+
 # Baseline: standard PGS (gwPGS) x E interaction
 
-```{r plot-mpgs-results}
+```{r pgs-metdata}
+pgs_metadata_df <- tibble(y = outcomes) %>%
+  rowwise() %>%
+  mutate(metadata_tbl = list(read_tsv(paste0("../data/processed/pgs/", y, "_prset.prsice")))) %>%
+  unnest(metadata_tbl) %>%
+  select(y, Set, Threshold, n_snps = Num_SNP)
+
+pgs_metadata_df %>%
+  filter(Set == "Base") %>%
+  kable(caption = "gwPGS metadata") %>%
+  kable_styling(full_width = FALSE)
+```
+
+```{r plot-gwpgs-results}
 ppgs_res_df %>%
   filter(pathway == "Base",
          pathway_group == "kegg_legacy") %>%  # Base is the same regardless of pathway group
@@ -175,11 +197,9 @@ bonferroni_list <- list(hallmark = 0.05 / n_hallmark,
                         kegg_medicus = 0.05 / n_kegg_medicus)
 
 sig_ppgs_res_df <- ppgs_res_df %>%
-  mutate(bonferroni_thresh = case_when(
-    pathway_group == "hallmark" ~ bonferroni_list[["hallmark"]],
-    pathway_group == "kegg_legacy" ~ bonferroni_list[["kegg_legacy"]],
-    pathway_group == "kegg_medicus" ~ bonferroni_list[["kegg_medicus"]]
-  )) %>%
+  rowwise() %>%
+  mutate(bonferroni_thresh = bonferroni_list[[pathway_group]]) %>%
+  ungroup() %>%
   filter(p.value < bonferroni_thresh)
 ```
 
@@ -187,10 +207,11 @@ sig_ppgs_res_df <- ppgs_res_df %>%
 ppgs_res_df %>%
   arrange(p.value) %>%
   mutate(p.value = signif(p.value, 3)) %>%
-  select(biomarker = y, pathway, pgs_p_threshold = threshold, estimate, std.error, p.value) %>%
+  # select(biomarker = y, pathway, pgs_p_threshold = threshold, estimate, std.error, p.value) %>%
+  select(Biomarker = y, Pathway = pathway, `Pathway collection` = pathway_group,
+         `pPGS p-value threshold` = threshold,
+         `pPGSxBMI estimate` = estimate, SE = std.error, P = p.value) %>%
   write_csv("../output/ppgs_interaction_estimates.csv")
-# select(Biomarker = y, `pPGS p-value threshold` = threshold,
-#        `pPGSxBMI estimate` = estimate, SE = std.error, P = p.value)
 ```
 
 ## Hallmark pathways
@@ -342,8 +363,10 @@ gene_pathway_counts_df <- gene_pathway_annot_df %>%
   ungroup()
 pathway_groups_with_counts <- gene_pathway_counts_df %>%
   distinct(pathway_group, n_pathways) %>%
+  mutate(pathway_group = factor(pathway_group, levels = pathway_groups)) %>%
+  arrange(pathway_group) %>%
   mutate(pathway_group_with_n = paste0(pathway_groups_clean[match(pathway_group, pathway_groups)],
-                                      " (", n_pathways, ")")) %>%
+                                      " (", n_pathways, " total)")) %>%
   pull(pathway_group_with_n)
 gene_pathway_counts_df %>%
   mutate(pathway_group = factor(pathway_group, levels = pathway_groups, 
@@ -357,7 +380,7 @@ gene_pathway_counts_df %>%
 ## Overall pPGSxE counts
 
 ```{r overall-ppgsxe-counts}
-ppgs_res_df %>%
+sig_ppgs_counts_df <- ppgs_res_df %>%
   filter(threshold == 0.001,
          pathway != "Base") %>%
   rowwise() %>%
@@ -365,7 +388,8 @@ ppgs_res_df %>%
   ungroup() %>%
   mutate(sig = p.value < sig_threshold) %>% 
   group_by(y, pathway_group) %>%
-  summarise(n_sig = sum(sig), n_total = n(), .groups = "drop") %>%
+  summarise(n_sig = sum(sig), n_total = n(), .groups = "drop") 
+sig_ppgs_counts_df %>%
   kable(caption = "pPGS findings by biomarker and pathway annotation") %>%
   kable_styling(full_width = FALSE)
 
@@ -391,6 +415,43 @@ sig_ppgs_res_df %>%
   labs(x = "", y = "# significant pPGSxBMI interactions")
 ```
 
+```{r n-eff-discoveries-comparison}
+sig_n_eff_df <- read_csv("../data/processed/pgs/sig_n_eff_tbl.csv")
+
+sig_ppgs_counts_df %>%
+  inner_join(sig_n_eff_df, by = c("y", "pathway_group")) %>%
+  mutate(n_eff = round(n_eff, 1)) %>%
+  select(y, pathway_group, `# pathways` = n_sig, `# effective pathways` = n_eff) %>%
+  kable(caption = "# significant pathways: 'raw' versus effective") %>%
+  kable_styling(full_width = FALSE)
+```
+
+```{r n-eff-threshold-comparison}
+all_n_eff_df <- read_csv("../data/processed/pgs/all_n_eff_tbl.csv")
+
+sig_comparison_df <- ppgs_res_df %>%
+  rowwise() %>%
+  mutate(std_bonferroni_thresh = bonferroni_list[[pathway_group]]) %>%
+  ungroup() %>%
+  inner_join(all_n_eff_df, by = c("y", "pathway_group")) %>%
+  mutate(eff_bonferroni_thresh = 0.05 / n_eff) %>%
+  mutate(sig_std = p.value < std_bonferroni_thresh,
+         sig_eff = p.value < eff_bonferroni_thresh) %>%
+  filter(threshold == 0.001,
+         pathway != "Base") %>%
+  group_by(y, pathway_group) %>%
+  summarise(n_sig_std = sum(sig_std), 
+            n_sig_eff = sum(sig_eff), 
+            n_total = n(), 
+            .groups = "drop")
+
+sig_comparison_df %>%
+  filter(pathway_group == "kegg_legacy") %>%
+  select(y, `Pathway count-based threshold` = n_sig_std, `Effective pathway-based threshold` = n_sig_eff) %>%
+  kable(caption = "Discovery of KEGG pathways using standard vs. effective Bonferroni correction") %>%
+  kable_styling(full_width = FALSE)
+```
+
 ## Was the P&T threshold important?
 
 ```{r pt-thresh-comparison, fig.asp=0.4}
@@ -398,7 +459,7 @@ ppgs_res_df %>%
   filter(pathway_group == "kegg_legacy") %>%
   select(y, threshold, pathway, statistic) %>%
   pivot_wider(names_from = "threshold", values_from = "statistic") %>%
-  mutate(y = factor(y, levels = outcomes, labels = outcomes_clean)) %>% View()
+  mutate(y = factor(y, levels = outcomes, labels = outcomes_clean)) %>% 
   ggplot(aes(x = `5e-08`, y = `0.001`)) +
   geom_point() +
   geom_abline(slope = 1, intercept = 0) +
@@ -525,6 +586,10 @@ all_top_gwis_df <- pruned_gwis_ss %>%
   bind_rows(.id = "biomarker")
 
 all_top_gwis_df %>%
+  select(`Index variant` = index_var, CHR, POS, 
+         `Non-effect allele` = NEA, `Effect allele` = EA, `Effect allele frequency` = AF, 
+         `Beta-interaction` = `Beta_G-bmi`, `P-interaction` = robust_P_int, 
+         `Beta-marginal (G)` = Beta_Marginal, `P-marginal (G)` = robust_P_marg) %>%
   write_csv("../output/top_gwis_loci.csv")
 
 all_top_gwis_counts_df <- all_top_gwis_df %>%
@@ -535,7 +600,27 @@ all_top_gwis_counts_df %>%
   kable(caption = "# GWIS hits per biomarker")
 ```
 
-# Comparison of pPGS and GWIS approaches
+# Comparison of pPGS and gwPGS approaches (variance explained)
+
+```{r lrt}
+lrt_res_df <- expand_grid(
+  y = outcomes
+  # type = c("gw", "pwy")
+) %>%
+  rowwise() %>%
+  mutate(lrt = list(readRDS(paste0("../data/processed/pgs/", 
+                              y, "_kegg_legacy_pwy_vs_base_lrt.rds"))),
+         lrt_p = lrt[["Pr(>Chisq)"]][2]) %>%
+  ungroup()
+
+lrt_res_df %>%
+  select(y, lrt_p) %>%
+  mutate(lrt_p = format(lrt_p, digits = 3)) %>%
+  kable(caption = "P-values from LRT adding all significant pPGSxBMI to a gwPGSxBMI model") %>%
+  kable_styling(full_width = FALSE)
+```
+
+# Comparison of pPGS and GWIS approaches (locus identification)
 
 ```{r snp-to-pathway-mapping}
 gtf_df <- read_tsv("../data/processed/prsice/Homo_sapiens.GRCh37.75.gtf.gz",
@@ -638,6 +723,48 @@ gwis_vs_ppgs_tbl %>%
   kable(caption = "Are significant pPGS findings 'explained' by GWIS loci?") %>%
   kable_styling()
 ```
+
+## Could we have tested for enrichment of GWIS instead?
+
+```{r magma}
+magma_res_df <- map(outcomes, function(y) {
+  read_table(paste0("../data/processed/magma/bmi_", y, ".gsa.out"), skip = 3)
+}) %>%
+    setNames(outcomes) %>%
+  bind_rows(.id = "y") %>%
+  select(y, pathway = FULL_NAME, p_magma = P)
+
+magma_ppgs_comparison_df <- magma_res_df %>%
+  mutate(pathway = gsub("KEGG_", "", pathway)) %>%
+  inner_join(filter(ppgs_res_df, pathway_group == "kegg_legacy"), 
+             by = c("y", "pathway")) %>%
+  filter(threshold == 0.001) %>%
+  mutate(nlp_ppgs = -log10(p.value),
+         nlp_magma = -log10(p_magma))
+
+magma_ppgs_comparison_df %>%
+  mutate(y = factor(y, levels = outcomes, labels = outcomes_clean)) %>%
+  ggplot(aes(x = nlp_ppgs, y = nlp_magma)) +
+  geom_hline(yintercept = 0, color = "gray") +
+  geom_vline(xintercept = 0, color = "gray") +
+  geom_point() +
+  geom_abline() +
+  # geom_smooth(method = "lm", se = FALSE) +
+  labs(x = expression(-log[10](italic(p))*" pPGSxBMI"),
+       y = expression(-log[10](italic(p))*" MAGMA")) +
+  facet_wrap(vars(y), nrow = 1, scales = "free_x") +
+  coord_cartesian(xlim = c(0, 10))
+
+magma_ppgs_nlp_corr = cor.test(magma_ppgs_comparison_df$nlp_ppgs, 
+                               magma_ppgs_comparison_df$nlp_magma,
+                               method = "spearman")
+
+magma_ppgs_comparison_df %>%
+  filter(pathway == "GLYCEROLIPID_METABOLISM") %>%
+  select(y, pathway, p_magma, p_ppgs = p.value)
+```
+
+The Spearman correlation between -log(p) from pPGSxBMI versus MAGMA-based GWIS enrichment is `r round(magma_ppgs_nlp_corr$estimate, 2)`.
 
 # Specific visualizations
 
@@ -923,3 +1050,29 @@ locus_to_pathway_df %>%
   kable_styling(full_width = FALSE)
 ```
 -->
+
+# Export pathways of interest
+
+```{r export-pathways}
+# for (pwy_grp in pathway_groups) {
+#   gene_pathway_annot_df %>%
+#     filter(pathway_group == pwy_grp) %>%
+#     distinct(pathway) %>%
+#     pull(pathway) %>%
+#     write(paste0("../data/processed/pgs/", pwy_grp, "_all_pwy_names.txt"))
+# }
+
+for (pwy_grp in pathway_groups) {
+  for (outcome in outcomes) {
+    sig_ppgs_res_df %>%
+      filter(pathway_group == pwy_grp,
+             y == outcome,
+             threshold == 0.001,
+             pathway != "Base") %>%
+      distinct(pathway) %>%
+      pull(pathway) %>%
+      write(paste0("../data/processed/pgs/", outcome, "_", pwy_grp, "_sig_pwy_names.txt"))
+  }
+}
+```
+

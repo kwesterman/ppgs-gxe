@@ -7,7 +7,6 @@ rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/ukb_phenos_panUKBB.
 rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/ukb_*_set.csv" ../data/processed/
 
 # Genome-wide single-variant analyses
-bm_arr=("hscrp_log" "hba1c" "ldl_statinadj" "tg_log" "alt_log" "ggt_log" "hdl" "alb" "lipA_log" "vitD" "apoA"  "apoB_statinadj"  "ast_log"  "chol_statinadj"  "creatinine"  "cysC_log"  "bilirubin_dir_log" "glu"  "shbg"  "bilirubin_tot_log")
 bm_arr=("alt_log" "ast_log" "ggt_log")
 
 for bm in ${bm_arr[@]}; do qsub -t 1-22 gwas/run_gwas.sh $bm; done
@@ -29,3 +28,31 @@ rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/pgs/*_prset*" ../da
 qsub pgs/run_test_ppgs_by_e.sh
 
 rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/pgs/*.rds" ../data/processed/pgs/
+
+# Calculate number of effective pPGS (across all pathways)
+
+qsub pgs/run_calc_n_eff.sh all
+
+rsync -avP uger:florez_ukb_projects/ppgs-gxe/data/processed/pgs/all_n_eff_tbl.csv ../data/processed/pgs/
+
+# Export key pathway lists to cluster
+
+rsync -avP ../data/processed/pgs/*pwy_names.txt uger:florez_ukb_projects/ppgs-gxe/data/processed/pgs/
+
+# Run LRT
+
+Rscript pgs/run_lrt.R  # Run interactively w/ 20G memory
+
+rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/pgs/*_lrt.rds" ../data/processed/pgs/
+
+# Calculate number of effective pPGS (for significant pathways)
+
+qsub pgs/run_calc_n_eff.sh sig
+
+rsync -avP uger:florez_ukb_projects/ppgs-gxe/data/processed/pgs/sig_n_eff_tbl.csv ../data/processed/pgs/
+
+# Run MAGMA
+
+for bm in ${bm_arr[@]}; do qsub gwas/run_magma_gwis.sh bmi_${bm}; done
+
+rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/magma/*gsa.out" ../data/processed/magma/

@@ -18,7 +18,7 @@ ss_cols <- c(
   CHR = "CHR", SNP = "RSID", POS = "POS",
   EA = "Effect_Allele", NEA = "Non_Effect_Allele", AF = "AF",
   N = "N_Samples", P_int = "P_Value_Interaction", P_joint = "P_Value_Joint", 
-  robust_P_int = "robust_P_Value_Interaction", robust_P_joint = "robust_P_Value_Joint"
+  robust_P_int = "robust_P_Value_Interaction", robust_P_joint = "robust_P_Value_Joint", robust_P_marg = "robust_P_Value_Marginal"
 )
 
 high_qual_variants <- read_tsv("../data/processed/ukb_rsIDs_maf0.005_info0.5.txt", 
