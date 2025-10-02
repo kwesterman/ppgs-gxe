@@ -316,18 +316,25 @@ processed_phenos_panUKBB %>%
 set.seed(123)
 
 training_frac <- 0.7
+tuning_frac <- 0.1
 
 processed_phenos_unrelated <- read_csv("../data/processed/ukb_phenos_unrelated.csv") 
 
 training_ids <- sample(processed_phenos_unrelated$id, 
                        round(training_frac * nrow(processed_phenos_unrelated)), 
                        replace = FALSE)
+tuning_ids <- sample(setdiff(processed_phenos_unrelated$id, training_ids), 
+                     round(tuning_frac * nrow(processed_phenos_unrelated)), 
+                     replace = FALSE)
 
 processed_phenos_unrelated %>%
   filter(id %in% training_ids) %>%
   write_csv("../data/processed/ukb_training_set.csv")
 processed_phenos_unrelated %>%
-  filter(!(id %in% training_ids)) %>%
+  filter(id %in% tuning_ids) %>%
+  write_tsv("../data/processed/ukb_tuning_set.tsv")
+processed_phenos_unrelated %>%
+  filter(!(id %in% c(training_ids, tuning_ids))) %>%
   write_csv("../data/processed/ukb_testing_set.csv")
 
 processed_phenos_EUR_unrelated <- read_csv("../data/processed/ukb_phenos_EUR_unrelated.csv") 
@@ -336,6 +343,9 @@ processed_phenos_EUR_unrelated <- read_csv("../data/processed/ukb_phenos_EUR_unr
 processed_phenos_EUR_unrelated %>%
   filter(id %in% training_ids) %>%
   write_csv("../data/processed/ukb_EUR_training_set.csv")
+processed_phenos_EUR_unrelated %>%
+  filter(id %in% tuning_ids) %>%
+  write_tsv("../data/processed/ukb_EUR_tuning_set.tsv")
 processed_phenos_EUR_unrelated %>%
   filter(!(id %in% training_ids)) %>%
   write_csv("../data/processed/ukb_EUR_testing_set.csv")

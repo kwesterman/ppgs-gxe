@@ -468,6 +468,90 @@ ppgs_res_df %>%
        y = "Z-statistic (p-threshold = P<0.001)")
 ```
 
+## Sensitivity analysis - separate training set
+
+```{r held-out-testing}
+ppgs_res_df_trainset <- readRDS("../data/processed/pgs/ppgs_res_df_trainset.rds") %>%
+  mutate(pathway = gsub("HALLMARK_|KEGG_|KEGG_MEDICUS_", "", pathway)) %>%
+  arrange(p.value)
+
+trainset_plt_df <- ppgs_res_df_trainset %>%
+  filter(term == "ppgs:bmi") %>%
+  mutate(nlp = -log10(p.value)) %>%
+  select(source, pathway, statistic) %>%
+  pivot_wider(names_from = "source", values_from = "statistic") %>%
+  mutate(held_out_adj = held_out * sqrt(100 / 70)) 
+
+trainset_plt <- trainset_plt_df %>%
+  ggplot(aes(x = full, y = held_out)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0) +
+  labs(x = "Z-statistic (100/20)", 
+       y = "Z-statistic (80/20)")
+
+trainset_plt
+
+# adj_trainset_plt <- trainset_plt_df %>%
+#   ggplot(aes(x = full, y = held_out_adj)) +
+#   geom_point() +
+#   geom_abline(slope = 1, intercept = 0) +
+#   labs(x = "Z-statistic (100/20)", 
+#        y = "Z-statistic (80/20) - sample size-adjusted")
+# 
+# trainset_plt + adj_trainset_plt +
+#   plot_layout(ncol = 2) +
+#   plot_annotation(tag_levels = "a")
+# 
+# lapply(trainset_plt_df[, 2:4], function(x) summary(abs(x))) %>%
+#   setNames(c("held_out", "full", "held_out_adj"))
+```
+
+```{r bmi-pgs, fig.asp=0.4}
+ppgs_res_df_bmiPGS <- readRDS("../data/processed/pgs/ppgs_res_df_bmiPGS.rds") %>%
+  mutate(pathway = gsub("HALLMARK_|KEGG_|KEGG_MEDICUS_", "", pathway),
+         adjustment = factor(adjustment, levels = c("bmi_pgs_main", "bmi_pgs_by_bmi"))) %>%
+  arrange(p.value)
+
+strip_labels <- c(
+  bmi_pgs_main   = 'Adj.~PGS[BMI]',
+  bmi_pgs_by_bmi = 'Adj.~PGS[BMI]~"×"~BMI'
+)
+
+ppgs_res_df %>%
+  filter(y == "alt_log",
+         pathway_group == "kegg_legacy",
+         threshold == 0.001,
+         term == "ppgs:bmi") %>%
+  left_join(ppgs_res_df_bmiPGS, by = c("e", "y", "pathway_group", "threshold", 
+                                       "pathway", "term"),
+            suffix = c(".primary", ".bmiPgsAdj")) %>%
+  # mutate(nlp = -log10(p.value)) %>%
+  # select(source, pathway, statistic) %>%
+  # pivot_wider(names_from = "source", values_from = "statistic") %>%
+  ggplot(aes(x = statistic.primary, y = statistic.bmiPgsAdj)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0) +
+  labs(x = "Z-statistic (primary model)", 
+       y = "Z-statistic (adjusted model)") +
+    facet_grid(
+      cols     = vars(adjustment),
+      labeller = as_labeller(strip_labels, label_parsed)
+    )
+
+
+bmi_pgs_df <- read_table("../data/processed/pgs/bmi_prset_hallmark.all_score", show_col_types = FALSE) %>%
+  select(id = IID, bmi_pgs = `Base_0.001`)
+test_ppgs_df <- read_csv("test_ppgs_subset.csv")
+a <- ukb_phenos %>%
+  inner_join(bmi_pgs_df, by = "id") %>%
+  inner_join(test_ppgs_df, by = "id")
+
+# lm(alt_log ~  bmi * GM, data = a) %>%
+#   broom::tidy()
+# lm(alt_log ~ bmi * bmi_pgs + bmi * GM, data = a) %>%
+#   broom::tidy()
+```
+
 # Variant-specific GWIS
 
 ```{r load-gwis}
@@ -1075,4 +1159,3 @@ for (pwy_grp in pathway_groups) {
   }
 }
 ```
-

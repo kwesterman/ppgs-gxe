@@ -1,0 +1,69 @@
+#!/bin/sh
+
+
+#$ -l os=RedHat7
+#$ -l h_vmem=2G
+#$ -l h_rt=12:00:00
+
+
+#$ -pe smp 8
+#$ -binding linear:8
+#$ -R y
+
+#$ -j y
+#$ -cwd
+
+
+tag=$1
+
+pgs_dir=../data/processed/pgs
+input_file=${pgs_dir}/${tag}_pgsInput
+pheno_file=../data/processed/ukb_tuning_set.tsv
+ld_ref_prefix=../../ipgs/data/processed/ld_ref/ukb_20k_hg19
+
+plink2=../opt/plink2
+prsice_dir=../opt/PRSice
+prsice_datadir=../data/processed/prsice
+
+
+source /broad/software/scripts/useuse
+use R-4.1
+
+
+Rscript ${prsice_dir}/PRSice.R --dir ${pgs_dir} \
+        --prsice ${prsice_dir}/PRSice_linux \
+        \
+        --base ${input_file} \
+        --snp SNP \
+        --chr CHR \
+        --bp POS \
+        --A1 EA \
+        --A2 NEA \
+        --stat beta \
+        --pvalue P \
+        --beta \
+        \
+        --ld ${ld_ref_prefix} \
+        --bar-levels 5e-08,5e-07,5e-06,5e-05,5e-04,0.005,0.05 \
+        --fastscore \
+        --no-full \
+        \
+        --target /broad/ukbb/imputed_v3/ukb_imp_chr#_v3,/humgen/florezlab/UKBB_app27892/ukb27892_imp_chrAUT_v3_s487395.sample \
+        --type bgen \
+	--exclude ${prsice_datadir}/ukb_duplicate_snpids.txt \
+        --pheno ${pheno_file} \
+        --pheno-col alt_log \
+        --ignore-fid \
+        \
+	--gtf ${prsice_datadir}/Homo_sapiens.GRCh37.75.gtf.gz \
+	--msigdb ${prsice_datadir}/c2.cp.kegg_legacy.v2024.1.Hs.symbols.gmt \
+	--set-perm 0 \
+	--wind-3 1K \
+	--wind-5 2K \
+	\
+	--print-snp \
+	--out ${pgs_dir}/${tag}_prset_kegg_legacy \
+	\
+	--seed 123 \
+        --thread 8 \
+        --memory 10Gb

@@ -25,7 +25,7 @@ rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/pgs/*_prset*" ../da
 
 # Test pPGSxE
 
-qsub pgs/run_test_ppgs_by_e.sh
+qsub gxe/run_test_ppgs_by_e.sh
 
 rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/pgs/*.rds" ../data/processed/pgs/
 
@@ -41,7 +41,7 @@ rsync -avP ../data/processed/pgs/*pwy_names.txt uger:florez_ukb_projects/ppgs-gx
 
 # Run LRT
 
-Rscript pgs/run_lrt.R  # Run interactively w/ 20G memory
+Rscript gxe/run_lrt.R  # Run interactively w/ 20G memory
 
 rsync -avP uger:"florez_ukb_projects/ppgs-gxe/data/processed/pgs/*_lrt.rds" ../data/processed/pgs/
 
